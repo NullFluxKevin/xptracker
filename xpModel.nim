@@ -4,8 +4,53 @@ import strformat
 import json
 
 import levelSystem
+import xpView
 
-template withDataFile(f: File, dataFilePath: typed, mode:FileMode, body: untyped) =
+
+const releaseDataDirPath = ".local/share/xptracker"
+const dataFileName = "xp.dat"
+
+  
+proc getDataFilePath*(): string {.raises: [].} =
+  when defined(release):
+    let userHome = getHomeDir()
+    let absoluteDataDirPath = userHome / releaseDataDirPath
+
+    if not dirExists(absoluteDataDirPath):
+      try:
+        createDir(absoluteDataDirPath)
+      except OSError,IOError:
+        quit("Fatal Error: Failed to create XP file directory")
+
+    result = absoluteDataDirPath / dataFileName
+
+  else:
+    try:
+      let root = getCurrentDir()
+      result = absolutePath(dataFileName, root)
+    except OSError:
+      quit("Fatal OS Error")
+
+    except ValueError:
+      discard """Manually provide root which will always be absolute, so will never raise ValueError."""
+
+
+proc createDataFileIfDoesNotExist*() {.raises: [].}= 
+  let dataPath = getDataFilePath()
+
+  if not dataPath.fileExists:
+    info fmt"Creating new XP data file: {dataPath}"
+    var f: File
+    try:
+      if not open(f, dataPath, fmWrite):
+        error fmt"Failed to create XP data file: {dataPath}"
+    finally:
+      close(f)
+
+    info "XP data file created."
+
+
+template withDataFile*(f: File, dataFilePath: typed, mode:FileMode, body: untyped) =
   if not dataFilePath.fileExists:
     quit("Error: File does not exist: " & dataFilePath)
     
@@ -22,7 +67,8 @@ template withDataFile(f: File, dataFilePath: typed, mode:FileMode, body: untyped
     close(f)
     
 
-proc loadRecords*(dataFilePath: string): seq[XPOrb] {.raises: [].}=
+proc loadRecords*(): seq[XPOrb] {.raises: [].}=
+  let dataFilePath = getDataFilePath()
   var f: File
   withDataFile(f, dataFilePath, fmRead):
     for line in f.lines:
@@ -37,7 +83,8 @@ proc loadRecords*(dataFilePath: string): seq[XPOrb] {.raises: [].}=
         quit(fmt"Error: Invalid XP record: {line}")
 
 
-proc appendRecord*(orb:XPOrb, dataFilePath: string) {.raises: [].} = 
+proc appendRecord*(orb:XPOrb) {.raises: [].} = 
+  let dataFilePath = getDataFilePath()
   var f: File
   withDataFile(f, dataFilePath, fmAppend):
     f.writeLine($(%orb))
